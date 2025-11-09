@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flappy Bird Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: linear-gradient(#87CEEB, #E0F6FF);
+            font-family: Arial, sans-serif;
+        }
+        
+        #gameCanvas {
+            border: 3px solid #333;
+            background: linear-gradient(#87CEEB, #E0F6FF);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        #speedPrompt {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .prompt-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        .prompt-content h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .speed-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        
+        .speed-btn {
+            padding: 15px 25px;
+            font-size: 18px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .speed-btn:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+        
+        #score {
+            position: absolute;
+            top: 20px;
+            font-size: 36px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        #gameOver {
+            position: absolute;
+            display: none;
+            text-align: center;
+            color: white;
+        }
+        
+        #gameOver h1 {
+            font-size: 48px;
+            margin: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        #gameOver p {
+            font-size: 24px;
+            margin: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        #restartBtn {
+            padding: 15px 30px;
+            font-size: 20px;
+            background: #FF5722;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        #restartBtn:hover {
+            background: #E64A19;
+        }
+        
+        #instructions {
+            margin-top: 20px;
+            color: #333;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Speed Selection Prompt -->
+    <div id="speedPrompt">
+        <div class="prompt-content">
+            <h2>Select Game Speed</h2>
+            <p>Choose how fast you want the game to run:</p>
+            <div class="speed-buttons">
+                <button class="speed-btn" onclick="startGame(0.25)">0.25x (Very Slow)</button>
+                <button class="speed-btn" onclick="startGame(0.5)">0.5x (Slow)</button>
+                <button class="speed-btn" onclick="startGame(0.75)">0.75x (Moderate)</button>
+                <button class="speed-btn" onclick="startGame(1.0)">1x (Normal)</button>
+                <button class="speed-btn" onclick="startGame(1.5)">1.5x (Fast)</button>
+                <button class="speed-btn" onclick="startGame(2.0)">2x (Very Fast)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas" width="400" height="600"></canvas>
+    <div id="score">Score: 0</div>
+    
+    <!-- Game Over Screen -->
+    <div id="gameOver">
+        <h1>Game Over!</h1>
+        <p id="finalScore">Final Score: 0</p>
+        <button id="restartBtn" onclick="location.reload()">Play Again</button>
+    </div>
+    
+    <div id="instructions">
+        Press SPACE or Click to Flap
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const gameOverElement = document.getElementById('gameOver');
+        const finalScoreElement = document.getElementById('finalScore');
+
+        // Game variables
+        let gameSpeed = 1.0;
+        let gameStarted = false;
+        let gameRunning = false;
+        let score = 0;
+        let frameCount = 0;
+
+        // Bird properties
+        const bird = {
+            x: 100,
+            y: canvas.height / 2,
+            width: 34,
+            height: 24,
+            velocity: 0,
+            gravity: 0.4,
+            jump: -7.5,
+            rotation: 0
+        };
+
+        // Pipe properties
+        const pipes = [];
+        const pipeWidth = 60;
+        const pipeGap = 150;
+        const pipeSpeed = 2;
+        let pipeInterval = 90;
+        let lastPipeFrame = 0;
+
+        // Audio Context for sound generation
+        let audioContext;
+        let flyingOscillator = null;
+        let isFlyingSoundPlaying = false;
+
+        // Initialize Audio Context
+        function initAudio() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        // Australian EAS Alarm Sound (Three-tone pattern)
+        function playFlyingSound() {
+            if (!audioContext || isFlyingSoundPlaying) return;
+            
+            isFlyingSoundPlaying = true;
+            const currentTime = audioContext.currentTime;
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Australian EAS alarm: 500Hz - 600Hz - 550Hz pattern
+            oscillator.frequency.setValueAtTime(500, currentTime);
+            oscillator.frequency.setValueAtTime(600, currentTime + 0.1);
+            oscillator.frequency.setValueAtTime(550, currentTime + 0.2);
+            
+            oscillator.type = 'sine';
+            gainNode.gain.setValueAtTime(0.1, currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, currentTime + 0.3);
+            
+            oscillator.start(currentTime);
+            oscillator.stop(currentTime + 0.3);
+            
+            oscillator.onended = () => {
+                isFlyingSoundPlaying = false;
+            };
+        }
+
+        // Normal Alarm Clock Sound (continuous beeping)
+        function playCollisionSound() {
+            if (!audioContext) return;
+            
+            const currentTime = audioContext.currentTime;
+            const duration = 1.5;
+            
+            // Create multiple beeps for alarm clock effect
+            for (let i = 0; i < 5; i++) {
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                const startTime = currentTime + (i * 0.3);
+                
+                // Alarm clock frequency around 880Hz
+                oscillator.frequency.setValueAtTime(880, startTime);
+                oscillator.type = 'square';
+                
+                gainNode.gain.setValueAtTime(0.3, startTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.2);
+                
+                oscillator.start(startTime);
+                oscillator.stop(startTime + 0.2);
+            }
+        }
+
+        // Start the game with selected speed
+        function startGame(speed) {
+            gameSpeed = speed;
+            document.getElementById('speedPrompt').style.display = 'none';
+            gameStarted = true;
+            gameRunning = true;
+            initAudio();
+            gameLoop();
+        }
+
+        // Draw bird
+        function drawBird() {
+            ctx.save();
+            ctx.translate(bird.x + bird.width / 2, bird.y + bird.height / 2);
+            ctx.rotate(bird.rotation);
+            
+            // Draw bird body (yellow circle)
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            ctx.arc(0, 0, bird.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw bird eye
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(8, -5, 5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(8, -5, 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw beak
+            ctx.fillStyle = '#FFA500';
+            ctx.beginPath();
+            ctx.moveTo(12, 0);
+            ctx.lineTo(20, -3);
+            ctx.lineTo(20, 3);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.restore();
+        }
+
+        // Draw pipes
+        function drawPipes() {
+            pipes.forEach(pipe => {
+                // Top pipe
+                ctx.fillStyle = '#2E7D32';
+                ctx.fillRect(pipe.x, 0, pipeWidth, pipe.top);
+                ctx.strokeStyle = '#1B5E20';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(pipe.x, 0, pipeWidth, pipe.top);
+                
+                // Pipe cap
+                ctx.fillRect(pipe.x - 5, pipe.top - 20, pipeWidth + 10, 20);
+                ctx.strokeRect(pipe.x - 5, pipe.top - 20, pipeWidth + 10, 20);
+                
+                // Bottom pipe
+                ctx.fillRect(pipe.x, pipe.bottom, pipeWidth, canvas.height - pipe.bottom);
+                ctx.strokeRect(pipe.x, pipe.bottom, pipeWidth, canvas.height - pipe.bottom);
+                
+                // Pipe cap
+                ctx.fillRect(pipe.x - 5, pipe.bottom, pipeWidth + 10, 20);
+                ctx.strokeRect(pipe.x - 5, pipe.bottom, pipeWidth + 10, 20);
+            });
+        }
+
+        // Update game state
+        function update() {
+            if (!gameRunning) return;
+
+            // Update bird
+            bird.velocity += bird.gravity * gameSpeed;
+            bird.y += bird.velocity * gameSpeed;
+            
+            // Update bird rotation based on velocity
+            bird.rotation = Math.min(Math.max(bird.velocity * 0.05, -0.5), 0.5);
+
+            // Update pipes
+            pipes.forEach(pipe => {
+                pipe.x -= pipeSpeed * gameSpeed;
+                
+                // Check if bird passed the pipe
+                if (!pipe.scored && pipe.x + pipeWidth < bird.x) {
+                    pipe.scored = true;
+                    score++;
+                    scoreElement.textContent = 'Score: ' + score;
+                }
+            });
+
+            // Remove off-screen pipes
+            if (pipes.length > 0 && pipes[0].x + pipeWidth < 0) {
+                pipes.shift();
+            }
+
+            // Add new pipes
+            if (frameCount - lastPipeFrame > pipeInterval / gameSpeed) {
+                const minTop = 100;
+                const maxTop = canvas.height - pipeGap - 100;
+                const top = Math.random() * (maxTop - minTop) + minTop;
+                
+                pipes.push({
+                    x: canvas.width,
+                    top: top,
+                    bottom: top + pipeGap,
+                    scored: false
+                });
+                
+                lastPipeFrame = frameCount;
+            }
+
+            // Check collisions
+            checkCollisions();
+
+            frameCount++;
+        }
+
+        // Check collisions
+        function checkCollisions() {
+            // Check ground and ceiling collision
+            if (bird.y + bird.height / 2 > canvas.height || bird.y - bird.height / 2 < 0) {
+                endGame();
+                return;
+            }
+
+            // Check pipe collision
+            pipes.forEach(pipe => {
+                if (bird.x + bird.width / 2 > pipe.x && 
+                    bird.x - bird.width / 2 < pipe.x + pipeWidth) {
+                    if (bird.y - bird.height / 2 < pipe.top || 
+                        bird.y + bird.height / 2 > pipe.bottom) {
+                        endGame();
+                    }
+                }
+            });
+        }
+
+        // End game
+        function endGame() {
+            if (!gameRunning) return;
+            
+            gameRunning = false;
+            playCollisionSound();
+            
+            finalScoreElement.textContent = 'Final Score: ' + score;
+            gameOverElement.style.display = 'block';
+        }
+
+        // Draw game
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw background gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(1, '#E0F6FF');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw clouds
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.beginPath();
+            ctx.arc(100 + (frameCount % 400), 100, 30, 0, Math.PI * 2);
+            ctx.arc(120 + (frameCount % 400), 100, 40, 0, Math.PI * 2);
+            ctx.arc(140 + (frameCount % 400), 100, 30, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(250 + (frameCount % 300), 200, 35, 0, Math.PI * 2);
+            ctx.arc(275 + (frameCount % 300), 200, 45, 0, Math.PI * 2);
+            ctx.arc(300 + (frameCount % 300), 200, 35, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw ground
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(0, canvas.height - 30, canvas.width, 30);
+            ctx.fillStyle = '#228B22';
+            ctx.fillRect(0, canvas.height - 35, canvas.width, 5);
+            
+            drawPipes();
+            drawBird();
+        }
+
+        // Game loop
+        function gameLoop() {
+            if (gameStarted) {
+                update();
+                draw();
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Handle input
+        function jump() {
+            if (gameRunning) {
+                bird.velocity = bird.jump;
+                playFlyingSound();
+            }
+        }
+
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                jump();
+            }
+        });
+
+        canvas.addEventListener('click', jump);
+    </script>
+</body>
+</html>
